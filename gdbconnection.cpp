@@ -11,10 +11,10 @@
 extern "C" int sceKernelOpenMsgPipe(const char *name);
 
 GdbConnection::GdbConnection(int socket)
-    : m_socket(socket)
-    , m_valid(true)
-    , m_rxThread(this)
-    , m_txThread(this)
+: m_socket(socket)
+, m_valid(true)
+, m_rxThread(this)
+, m_txThread(this)
 {
     auto nonblocking = 0;
     auto res = sceNetSetsockopt(socket, SCE_NET_SOL_SOCKET, SCE_NET_SO_NBIO, &nonblocking, sizeof(nonblocking));
@@ -72,8 +72,8 @@ int GdbConnection::close()
 }
 
 GdbConnection::RxThread::RxThread(GdbConnection *connection)
-    : Thread("tcp-rx-thread")
-    , m_connection(connection)
+: Thread("tcp-rx-thread")
+, m_connection(connection)
 {
     setStackSize(0x3000);
 }
@@ -86,7 +86,7 @@ void GdbConnection::RxThread::run()
 {
     while (m_connection->valid())
     {
-        char data[0x2000];
+        char data[0x2000] = {};
         auto res = m_connection->recv(data, sizeof(data));
 
         if (res < 0)
@@ -128,9 +128,10 @@ void GdbConnection::TxThread::run()
     while (m_connection->valid())
     {
         unsigned int size = 0;
-        char data[0x2000];
+        char data[0x2000] = {};
 
         auto timeout = 100000u; // us
+
         // receive data from the kernel
         auto res = vdb_recv_serial_pipe(data, sizeof(data), timeout);
 

@@ -31,17 +31,30 @@ add_executable(vdbtcp
   log.h
 )
 
+target_link_directories(vdbtcp
+  PUBLIC
+  ${CMAKE_SOURCE_DIR}/../kvdb/build
+)
+
 target_link_libraries(vdbtcp
-  c
-  gcc
+  k
+  SceLibKernel_stub
+  #SceLibc_stub_weak
+  SceRtc_stub
+  SceSysmem_stub
   vdb_user_stub
   SceIofilemgr_stub
   SceKernelThreadMgr_stub
-  SceLibKernel_stub
   SceNetCtl_stub_weak
   SceNet_stub_weak
   SceAppMgr_stub_weak
   ScePower_stub_weak
+  gcc
+)
+
+target_include_directories(vdbtcp
+  PUBLIC
+  ${CMAKE_SOURCE_DIR}/../kvdb/include
 )
 
 add_custom_target(exports SOURCES exports.yml)

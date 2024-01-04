@@ -48,7 +48,7 @@ namespace
             { "reboot", cmd_reboot },
         };
 
-        constexpr size_t handlerCount = sizeof(handlers)/sizeof(handlers[0]);
+        constexpr size_t handlerCount = sizeof(handlers) / sizeof(handlers[0]);
 
         for (auto i = 0u; i < handlerCount; ++i)
         {
@@ -67,7 +67,7 @@ CommandConnection::CommandConnection(int socket)
     , m_valid(true)
     , m_commandThread(this)
 {
-    LOG("we got this far COMMADN\n");
+    LOG("we got this far COMMAND\n");
     auto nonblocking = 0;
     auto res = sceNetSetsockopt(socket, SCE_NET_SOL_SOCKET, SCE_NET_SO_NBIO, &nonblocking, sizeof(nonblocking));
 
@@ -131,27 +131,27 @@ void CommandConnection::CommandThread::run()
 {
     LOG("we got this far\n");
     constexpr auto maxBufferSize = 0x800u;
-    char data[maxBufferSize+1];
+    char data[maxBufferSize + 1];
 
     if (readCommand(data, maxBufferSize))
     {
         LOG("Got command \"%s\"\n", data);
-        char output[maxBufferSize+1];
+        char output[maxBufferSize + 1];
         *output = '\0';
 
         auto space = strchr(data, ' ');
         auto command = data;
         const char *argument = "";
 
-        if (space)
+        if (space != nullptr)
         {
             *space = '\0';
-            argument = space+1;
+            argument = space + 1;
         }
 
         auto handler = lookupCommandHandler(command);
 
-        if (handler)
+        if (handler != nullptr)
         {
             LOG("Found command handler \"%s\"\n", command);
             handler(argument, output, maxBufferSize);
@@ -179,7 +179,7 @@ bool CommandConnection::CommandThread::readCommand(char *output, size_t size) co
 
     while (m_connection->valid() && endPosition < size)
     {
-        auto res = m_connection->recv(output+endPosition, size-endPosition);
+        auto res = m_connection->recv(output + endPosition, size - endPosition);
         LOG("Read 0x%08X from connection\n", res);
 
         if (res < 0)
@@ -196,9 +196,9 @@ bool CommandConnection::CommandThread::readCommand(char *output, size_t size) co
 
         for (auto i = 0; i < res; ++i)
         {
-            if (output[i+endPosition] == '\n')
+            if (output[i + endPosition] == '\n')
             {
-                output[i+endPosition] = '\0';
+                output[i + endPosition] = '\0';
                 return true;
             }
         }
