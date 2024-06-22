@@ -22,13 +22,11 @@ namespace
         // setup networking
         Network network;
 
-        while (1)
+        while (true)
         {
             network.waitUntilConnected();
 
             Server<GdbConnection> gdb;
-            Server<FtpConnection> ftp;
-            Server<CommandConnection> commands;
 
             if (!gdb.listen(31337))
             {
@@ -44,42 +42,16 @@ namespace
                 }
             }
 
-            if (!ftp.listen(1337))
-            {
-                if (!network.connected())
-                {
-                    LOG("network disconnected: retrying connection\n");
-                    continue;
-                }
-                else
-                {
-                    LOG("failed to listen to ftp port. aborting\n");
-                    break;
-                }
-            }
-
-            if (!commands.listen(1338))
-            {
-                if (!network.connected())
-                {
-                    LOG("network disconnected: retrying connection\n");
-                    continue;
-                }
-                else
-                {
-                    LOG("failed to listen to command port. aborting\n");
-                    break;
-                }
-            }
-
             LOG("server listening\n");
 
-            while (network.connected())
+            /*while (network.connected())
             {
                 // yield
-                sceKernelDelayThread(100);
-            }
+                sceKernelDelayThread(100 * 1000);
+            }*/
         }
+
+        LOG("vdbtcp thread terminated\n");
 
         return 0;
     }

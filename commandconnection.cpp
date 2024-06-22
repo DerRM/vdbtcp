@@ -1,7 +1,7 @@
 #include "commandconnection.h"
 #include "log.h"
 
-#include <vdb.h>
+//#include <vdb.h>
 
 #include <psp2/net/net.h>
 #include <psp2/kernel/error.h>
@@ -23,7 +23,7 @@ namespace
     void cmd_launch(const char *argument, char *output, size_t outSize)
     {
         LOG("about to launch app\n");
-        auto res = vdb_launch_debug(argument);
+        auto res = 0;//vdb_launch_debug(argument);
 
         if (res < 0)
         {

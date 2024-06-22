@@ -16,6 +16,8 @@ GdbConnection::GdbConnection(int socket)
 , m_rxThread(this)
 , m_txThread(this)
 {
+    LOG("GdbConnection ctor\n");
+
     auto nonblocking = 0;
     auto res = sceNetSetsockopt(socket, SCE_NET_SOL_SOCKET, SCE_NET_SO_NBIO, &nonblocking, sizeof(nonblocking));
 
@@ -25,6 +27,8 @@ GdbConnection::GdbConnection(int socket)
         return;
     }
 
+    LOG("sceNetSetsockopt deactivate nonblocking: %08X\n", res);
+
     auto set = 1;
     res = sceNetSetsockopt(socket, SCE_NET_SOL_SOCKET, SCE_NET_TCP_NODELAY, &set, sizeof(set));
 
@@ -33,6 +37,8 @@ GdbConnection::GdbConnection(int socket)
         LOG("error setting TCP no-delay on socket (0x%08X)\n", res);
     }
 
+    LOG("sceNetSetsockopt activate tcp nodelay: %08X\n", res);
+
     // start our threads
     m_rxThread.start();
     m_txThread.start();
@@ -40,11 +46,6 @@ GdbConnection::GdbConnection(int socket)
 
 GdbConnection::~GdbConnection()
 {
-    if (!m_valid)
-    {
-        return;
-    }
-
     close();
 }
 
@@ -66,8 +67,9 @@ int GdbConnection::send(const char *data, unsigned int length) const
 int GdbConnection::close()
 {
     auto res = sceNetSocketClose(m_socket);
+
+    LOG("sceNetSocketClose: %08X\n", res);
     m_socket = -1;
-    m_valid = false;
     return res;
 }
 
@@ -80,10 +82,20 @@ GdbConnection::RxThread::RxThread(GdbConnection *connection)
 
 GdbConnection::RxThread::~RxThread()
 {
+    int res = 0;
+    res = sceKernelWaitThreadEnd(getThreadId(), nullptr, nullptr);
+
+    LOG("wait for rx thread: 0x%08X\n", res);
+
+    res = sceKernelDeleteThread(getThreadId());
+
+    LOG("terminate rx thread: 0x%08X\n", res);
 }
 
 void GdbConnection::RxThread::run()
 {
+    LOG("start rx thread\n");
+
     while (m_connection->valid())
     {
         char data[0x2000] = {};
@@ -92,14 +104,15 @@ void GdbConnection::RxThread::run()
         if (res < 0)
         {
             LOG("error receiving data from TCP: 0x%08X\n", res);
+            vdb_send_serial_pipe("$k#6b", 5);
             break;
         }
-
         else if (res == 0)
         {
             break;
         }
 
+        //LOG("data received: %s\n", data);
         res = vdb_send_serial_pipe(data, res);
 
         if (res < 0)
@@ -109,7 +122,9 @@ void GdbConnection::RxThread::run()
         }
     }
 
-    m_connection->close();
+    LOG("end rx thread\n");
+
+    m_connection->m_valid = false;
 }
 
 GdbConnection::TxThread::TxThread(GdbConnection *connection)
@@ -121,24 +136,36 @@ GdbConnection::TxThread::TxThread(GdbConnection *connection)
 
 GdbConnection::TxThread::~TxThread()
 {
+    int res = 0;
+    res = sceKernelWaitThreadEnd(getThreadId(), nullptr, nullptr);
+    
+    LOG("wait for tx thread: 0x%08X\n", res);
+
+    res = sceKernelDeleteThread(getThreadId());
+
+    LOG("terminate tx thread: 0x%08X\n", res);
 }
 
 void GdbConnection::TxThread::run()
 {
+    LOG("start tx thread\n");
+
     while (m_connection->valid())
     {
         unsigned int size = 0;
+        int res = 0;
         char data[0x2000] = {};
 
-        auto timeout = 100000u; // us
+        auto timeout = 100 * 1000u; // us
 
         // receive data from the kernel
-        auto res = vdb_recv_serial_pipe(data, sizeof(data), timeout);
+        res = vdb_recv_serial_pipe(data, sizeof(data), timeout);
 
         if (res < 0)
         {
             if (static_cast<unsigned int>(res) == SCE_KERNEL_ERROR_WAIT_TIMEOUT)
             {
+                //LOG("wait for data timed out 0x%08X\n", res);
                 continue;
             }
 
@@ -147,6 +174,7 @@ void GdbConnection::TxThread::run()
         }
 
         size = res;
+        //LOG("data sent: %s\n", data);
         res = m_connection->send(data, size);
 
         if (res < 0)
@@ -156,5 +184,7 @@ void GdbConnection::TxThread::run()
         }
     }
 
-    m_connection->close();
+    LOG("end tx thread\n");
+
+     m_connection->m_valid = false;
 }

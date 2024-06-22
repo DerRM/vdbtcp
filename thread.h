@@ -16,6 +16,8 @@ public:
 protected:
     virtual void run() = 0;
 
+    int getThreadId();
+
 private:
     const char *m_name = "";
     int m_thid = -1;
@@ -23,3 +25,7 @@ private:
 
     static int threadEntry(SceSize args, void *argp);
 };
+
+inline int Thread::getThreadId() {
+    return m_thid;
+}
