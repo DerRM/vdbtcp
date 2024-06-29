@@ -71,7 +71,7 @@ void Network::run()
     while (m_running)
     {
         sceNetCtlCheckCallback();
-        sceKernelDelayThread(10000);
+        sceKernelDelayThread(10 * 1000);
     }
 }
 

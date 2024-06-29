@@ -29,6 +29,8 @@ add_executable(vdbtcp
   ftp.c
   strlcat.c
   log.h
+  rsp.cpp
+  hex.cpp
 )
 
 target_link_directories(vdbtcp

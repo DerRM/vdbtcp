@@ -15,30 +15,21 @@ public:
     int close();
 
 private:
-    class RxThread : public Thread
+
+    class GdbThread : public Thread
     {
     public:
-        RxThread(GdbConnection *connection);
-        ~RxThread();
+        GdbThread(GdbConnection *connection);
+        ~GdbThread();
 
     private:
         void run() override;
         GdbConnection *m_connection = nullptr;
-    };
-
-    class TxThread : public Thread
-    {
-    public:
-        TxThread(GdbConnection *connection);
-        ~TxThread();
-
-    private:
-        void run() override;
-        GdbConnection *m_connection = nullptr;
+        //Ringbuffer m_inputBuffer;
+        //Ringbuffer m_outputBuffer;
     };
 
     int m_socket = -1;
     bool m_valid = false;
-    RxThread m_rxThread;
-    TxThread m_txThread;
+    GdbThread m_gdbThread;
 };

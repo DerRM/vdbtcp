@@ -65,9 +65,9 @@ int module_start()
 
     // tell vdb we want to use its pipes. we will transmit our data from
     // tcp through these pipes
-    vdb_serial_pipe();
+    //vdb_serial_pipe();
 
-    int res = sceKernelCreateThread("vdbtcp", &threadEntry, 0x40, 0x1000, 0, 0, NULL);
+    int res = sceKernelCreateThread("vdbtcp", &threadEntry, 0x40, 0x3000, 0, 0, NULL);
 
     if (res < 0)
     {

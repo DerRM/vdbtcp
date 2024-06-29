@@ -3,8 +3,16 @@
 
 #include <vdb.h>
 
+#include "rsp.h"
+
+#include <algorithm>
+
 #include <psp2/net/net.h>
 #include <psp2/kernel/error.h>
+
+static constexpr char QSUPPORTED[]      = "qSupported";
+
+#define STRLEN(str) sizeof(str) - 1
 
 // TODO: add to SDK
 #include <psp2/kernel/threadmgr.h>
@@ -13,8 +21,7 @@ extern "C" int sceKernelOpenMsgPipe(const char *name);
 GdbConnection::GdbConnection(int socket)
 : m_socket(socket)
 , m_valid(true)
-, m_rxThread(this)
-, m_txThread(this)
+, m_gdbThread(this)
 {
     LOG("GdbConnection ctor\n");
 
@@ -40,8 +47,7 @@ GdbConnection::GdbConnection(int socket)
     LOG("sceNetSetsockopt activate tcp nodelay: %08X\n", res);
 
     // start our threads
-    m_rxThread.start();
-    m_txThread.start();
+    m_gdbThread.start();
 }
 
 GdbConnection::~GdbConnection()
@@ -73,38 +79,61 @@ int GdbConnection::close()
     return res;
 }
 
-GdbConnection::RxThread::RxThread(GdbConnection *connection)
-: Thread("tcp-rx-thread")
+GdbConnection::GdbThread::GdbThread(GdbConnection *connection)
+: Thread("tcp-gdb-thread")
 , m_connection(connection)
 {
     setStackSize(0x3000);
 }
 
-GdbConnection::RxThread::~RxThread()
+GdbConnection::GdbThread::~GdbThread()
 {
     int res = 0;
     res = sceKernelWaitThreadEnd(getThreadId(), nullptr, nullptr);
 
-    LOG("wait for rx thread: 0x%08X\n", res);
+    LOG("wait for gdb thread: 0x%08X\n", res);
 
     res = sceKernelDeleteThread(getThreadId());
 
-    LOG("terminate rx thread: 0x%08X\n", res);
+    LOG("terminate gdb thread: 0x%08X\n", res);
 }
 
-void GdbConnection::RxThread::run()
+static rsp::Packet processPacket(rsp::Packet& packet, rsp::Ringbuffer& output) {
+    LOG("process packet\n");
+    output.data[0] = '\n';
+    output.length = 0;
+    rsp::Packet out_packet;
+    if (packet.length == 0) {
+        return out_packet;
+    }
+    switch(packet.start[0]) {
+        case 'q': {
+            if (sceClibStrncmp(QSUPPORTED, packet.start, std::min(STRLEN(QSUPPORTED), packet.length)) == 0) {
+                LOG("handle qSupported\n");
+                out_packet.write("PacketSize=4096;qXfer:features:read+;swbreak+", output);
+                LOG("output packet: %s\n", output.data);
+            }
+        } break;
+    }
+
+    return out_packet;
+}
+
+void GdbConnection::GdbThread::run()
 {
-    LOG("start rx thread\n");
+    LOG("start gdb thread\n");
+
+    rsp::Ringbuffer inputBuffer;
+    rsp::Ringbuffer outputBuffer;
 
     while (m_connection->valid())
     {
-        char data[0x2000] = {};
-        auto res = m_connection->recv(data, sizeof(data));
+        auto res = m_connection->recv(inputBuffer.data, sizeof(inputBuffer.data));
 
         if (res < 0)
         {
             LOG("error receiving data from TCP: 0x%08X\n", res);
-            vdb_send_serial_pipe("$k#6b", 5);
+            //vdb_send_serial_pipe("$k#6b", 5);
             break;
         }
         else if (res == 0)
@@ -112,79 +141,41 @@ void GdbConnection::RxThread::run()
             break;
         }
 
-        //LOG("data received: %s\n", data);
-        res = vdb_send_serial_pipe(data, res);
+        inputBuffer.length = static_cast<uint32_t>(res);
+        inputBuffer.data[inputBuffer.length] = '\0';
+
+        LOG("data received: %s\n", inputBuffer.data);
+        rsp::Packet packet;
+        packet.read(inputBuffer);
+
+        LOG("read packet\n");
+
+        res = m_connection->send(&packet.accept, 1);
+        if (res < 0) {
+            LOG("error sending data through TCP: 0x%08X\n", res);
+            break;
+        }
+
+        LOG("packet response: %c\n", packet.accept);
+
+        rsp::Packet output = processPacket(packet, outputBuffer);
+
+        res = m_connection->send(outputBuffer.data, outputBuffer.length);
+        if (res < 0) {
+            LOG("error sending data through TCP: 0x%08X\n", res);
+            break;
+        }
+
+        /*res = vdb_send_serial_pipe(data, res);
 
         if (res < 0)
         {
             LOG("error sending data through pipe: 0x%08X\n", res);
             break;
-        }
+        }*/
     }
 
-    LOG("end rx thread\n");
+    LOG("end gdb thread\n");
 
     m_connection->m_valid = false;
-}
-
-GdbConnection::TxThread::TxThread(GdbConnection *connection)
-    : Thread("tcp-tx-thread")
-    , m_connection(connection)
-{
-    setStackSize(0x3000);
-}
-
-GdbConnection::TxThread::~TxThread()
-{
-    int res = 0;
-    res = sceKernelWaitThreadEnd(getThreadId(), nullptr, nullptr);
-    
-    LOG("wait for tx thread: 0x%08X\n", res);
-
-    res = sceKernelDeleteThread(getThreadId());
-
-    LOG("terminate tx thread: 0x%08X\n", res);
-}
-
-void GdbConnection::TxThread::run()
-{
-    LOG("start tx thread\n");
-
-    while (m_connection->valid())
-    {
-        unsigned int size = 0;
-        int res = 0;
-        char data[0x2000] = {};
-
-        auto timeout = 100 * 1000u; // us
-
-        // receive data from the kernel
-        res = vdb_recv_serial_pipe(data, sizeof(data), timeout);
-
-        if (res < 0)
-        {
-            if (static_cast<unsigned int>(res) == SCE_KERNEL_ERROR_WAIT_TIMEOUT)
-            {
-                //LOG("wait for data timed out 0x%08X\n", res);
-                continue;
-            }
-
-            LOG("error receiving data from the kernel 0x%08X\n", res);
-            break;
-        }
-
-        size = res;
-        //LOG("data sent: %s\n", data);
-        res = m_connection->send(data, size);
-
-        if (res < 0)
-        {
-            LOG("error sending data over TCP 0x%08X\n", res);
-            break;
-        }
-    }
-
-    LOG("end tx thread\n");
-
-     m_connection->m_valid = false;
 }
